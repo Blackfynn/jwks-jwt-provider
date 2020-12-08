@@ -27,28 +27,29 @@ const server = createServer((req, res) => {
   const requestUrl = req.url.toLowerCase();
   const target = req.headers["x-amz-target"]
 
-  if (requestMethod === "get") {
-    // Return the public keys
-    // URL will be / or /dummy-user-pool/.well-known/jwks.json
-    return sendJWKS(req, res);
+  switch (requestMethod) {
+    case "get":
+      // Return the public keys
+      // URL will be / or /dummy-user-pool/.well-known/jwks.json
+      return sendJWKS(req, res);
+    case "post":
+      // Not an API call.
+      if (requestUrl !== apiUrl) {
+        return sendJWT(req, res);
+      }
+
+      let requestData = '';
+      req.on('data', chunk => {
+        requestData += chunk;
+      })
+      req.on('end', () => {
+        return apiCall(target, requestData, requestUrl, res)
+      })
+      break;
+    default:
+      return res.end();
   }
 
-  if (requestMethod !== "post") {
-    return res.end();
-  }
-
-  // Not an API call.
-  if (requestUrl !== apiUrl) {
-    return sendJWT(req, res);
-  }
-
-  let requestData = '';
-  req.on('data', chunk => {
-    requestData += chunk;
-  })
-  req.on('end', () => {
-    return apiCall(target, requestData, requestUrl, res)
-  })
 }).listen(8088);
 
 function apiCall(target, requestData, url, res) {
@@ -59,22 +60,21 @@ function apiCall(target, requestData, url, res) {
     jsonData = emptyJson;
   }
 
-  if (target === adminGetUserTarget) {
-    return adminGetUser(jsonData["Username"], res)
+  switch (target) {
+    case adminGetUserTarget:
+      return adminGetUser(jsonData["Username"], res)
+    case adminCreateUserTarget:
+      return adminCreateUser(jsonData["Username"], res)
+    default:
+      console.log("Unsupported API Call:", target, jsonData)
+
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Content-Length": emptyData.length
+      });
+
+      return res.end(emptyData);
   }
-
-  if (target === adminCreateUserTarget) {
-    return adminCreateUser(jsonData["Username"], res)
-  }
-
-  console.log("Unsupported API Call:", target, jsonData)
-
-  res.writeHead(200, {
-    "Content-Type": "application/json",
-    "Content-Length": emptyData.length
-  });
-
-  return res.end(emptyData);
 }
 
 function adminGetUser(email, res) {
